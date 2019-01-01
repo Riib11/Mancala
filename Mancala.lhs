@@ -93,6 +93,7 @@ add_hole index h holes = set_hole index (h + get_hole holes index) holes
 init_holes =
     [ 4, 4, 4, 4, 4, 4
     , 4, 4, 4, 4, 4, 4 ]
+    
 
 \end{code}
 %\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
