@@ -2,7 +2,7 @@ module Debug
 ( debug
 ) where
 
-_DEBUG = True
+_DEBUG = False
 
 debug :: Show a => a -> IO ()
 debug x = if _DEBUG

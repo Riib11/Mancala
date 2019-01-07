@@ -22,10 +22,14 @@
 \begin{code}
 
 module Mancala
-(
+( Player(P1,P2)
+, Status(Turn,Finished)
+, Spaces
+, State(State, status, spaces, score1, score2), state_init
+, Action(Action)
+, update
 ) where
 
-import qualified Data.Vector as V
 import Debug
 
 \end{code}
@@ -64,16 +68,25 @@ instance Show Status where
 %///////////////////////////////////////////////
 \begin{code}
 
-type Spaces = V.Vector (Int, Int) -- (index, pieces)
+type Spaces = [(Int, Int)] -- (index, pieces)
 
 (+%) :: Int -> Int -> Int
 x +% y = (x + y) `mod` 12
 
--- spaces_init = V.indexed $ V.replicate 12 4
-spaces_init = V.indexed $ V.fromList
-    [ 4, 4, 4, 4, 4, 4
-    , 1, 0, 4, 4, 4, 4 ]
+indexed :: [a] -> [(Int, a)]
+indexed ls = let
+    helper []     _ = []
+    helper (x:xs) i = (i,x) : helper xs (i+1)
+    in helper ls 0
 
+
+spaces_init = indexed $ take 12 $ repeat 4
+
+-- spaces_init = indexed $
+--     [ 4, 4, 4, 4, 4, 4
+    -- , 4, 4, 4, 4, 4, 4 ]
+
+spaces_empty = indexed $ take 12 $ repeat 0
 
 \end{code}
 %\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -101,19 +114,21 @@ instance Show State where
             , show $ status state
             , "\n\n"
             , "score2: " ++ (show $ score2 state) ++ "\n"
-            , "+----" ++   "+"  ++ "----+\n"
-            , "| ", s 9,  " | ", s 8, " |\n"
-            , "+----" ++   "+"  ++ "----+\n"
-            , "| ", s 10, " | ", s 7, " |\n"
-            , "+----" ++   "+"  ++ "----+\n"
-            , "| ", s 11, " | ", s 6, " |\n"
-            , "+----" ++   "+"  ++ "----+\n"
-            , "| ", s 0,  " | ", s 5, " |\n"
-            , "+----" ++   "+"  ++ "----+\n"
-            , "| ", s 1,  " | ", s 4, " |\n"
-            , "+----" ++   "+"  ++ "----+\n"
-            , "| ", s 2,  " | ", s 3, " |\n"
-            , "+----" ++   "+"  ++ "----+\n"
+            , "\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "    | ", s 9,  " | ", s 8, " |\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "    | ", s 10, " | ", s 7, " |\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "    | ", s 11, " | ", s 6, " |\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "    | ", s 0,  " | ", s 5, " |\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "    | ", s 1,  " | ", s 4, " |\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "    | ", s 2,  " | ", s 3, " |\n"
+            , "    +----" ++   "+"  ++ "----+\n"
+            , "\n"
             , "score1: " ++ (show $ score1 state) ++ "\n"
             , "\n" ] 
 
@@ -149,11 +164,11 @@ add_score player x state = case player of
     P2 -> set_score2 (x + score2 state) state
 
 get_space :: Int -> State -> Int
-get_space index state = snd $ (spaces state) V.! index
+get_space index state = snd $ (spaces state) !! index
 
 set_space :: Int -> Int -> State -> State
 set_space index x_new state = let
-    spaces_new = V.map
+    spaces_new = map
         (\(i, x) -> if i == index then (i, x_new) else (i, x))
         (spaces state)
     in set_spaces spaces_new state
@@ -192,20 +207,15 @@ get_active_index player (Action index) =
 
 update :: Action -> State -> IO State
 update action state_orig = let
-    active_player = case status state_orig of
-        Turn P1 -> P2
-        Turn P2 -> P2
+    -- `active` player and `other` player
+    (active, other) = case status state_orig of
+        Turn P1 -> (P1, P2)
+        Turn P2 -> (P2, P1)
 
-    -- distribute selected pieces to the appropriate places
-    updated_action :: State -> IO State
-    updated_action state = case active_player of
-        P1 -> updated_action_p1 state
-        P2 -> updated_action_p2 state
-    
     -- (player 1) distribute selected pieces to the appropriate places
-    updated_action_p1 :: State -> IO State
-    updated_action_p1 state = let
-        action_index = get_active_index active_player action
+    update_action :: State -> IO State
+    update_action state = let
+        action_index = get_active_index active action
         action_pieces = get_space action_index state
         emptied_action_index = set_space action_index 0 state
         -- distribute action pieces
@@ -213,138 +223,100 @@ update action state_orig = let
         helper index pieces state = let
             target = get_space (index +% 1) state
             after = get_space (index +% 2) state
-            in case (index, pieces, target) of
-                -- drop last piece in score1
-                (2, 1, _) -> do
-                    debug "drop last piece in score1"
+            in case (active, index, pieces, target) of
+                -- P1 drop last piece in score1
+                (P1, 2, 1, _) -> do
+                    debug "P1 drop last piece in score1"
                     return
-                      $ add_score P1 1            -- P1 scores 1
-                      $ set_status (Turn P1)      -- P1 takes extra turn
+                      $ add_score P1 1              -- P1 scores 1
+                      $ set_status (Turn P1)        -- P1 takes extra turn
                             state
-                -- drop last piece immediately after score1
-                (2, 2, _) -> do
+                -- P2 drop last piece in score2
+                (P2, 8, 1, _) -> do
+                    debug "P2 drop last piece in score2"
+                    return
+                      $ add_score P2 1              -- P2 scores 1
+                      $ set_status (Turn P2)        -- P2 takes extra turn
+                            state
+                -- P1 drop last piece immediately after score1
+                (P1, 2, 2, _) -> do
                     debug "drop last piece immediately after score1"
                     return
-                        $ add_score P1 1           -- P1 scores 1
-                        $ add_space (index +% 1) 1 -- drop 1 in `target`
-                        $ set_status (Turn P2)     -- alternate turn to P2
+                        $ add_score P1 1            -- P1 scores 1
+                        $ add_space (index +% 1) 1  -- drop 1 in `target`
+                        $ set_status (Turn P2)      -- alternate turn to P2
                             state
-                -- `target` is empty
-                (_, 1, 0) -> do
+                -- P2 drop last piece immediately after score1
+                (P2, 8, 2, _) -> do
+                    debug "P2 drop last piece immediately after score1"
+                    return
+                        $ add_score P2 1            -- P2 scores 1
+                        $ add_space (index +% 1) 1  -- drop 1 in `target`
+                        $ set_status (Turn P1)      -- alternate turn to P1
+                            state
+                -- P1 `target` is empty
+                (_, _, 1, 0) -> do
                     debug "target is empty"
                     return
-                      $ add_space (index +% 1) 1  -- drop 1 in `target`
-                      $ add_score P1 after        -- P1 scores `after`
-                      $ set_space (index +% 2) 0  -- empty `after`
-                      $ set_status (Turn P2)      -- alternate turn to P2
+                      $ add_space (index +% 1) 1    -- drop 1 in `target`
+                      $ add_score active after      -- active scores `after`
+                      $ set_space (index +% 2) 0    -- empty `after`
+                      $ set_status (Turn other)     -- alternate turn to other
                             state
                 -- target is non-empty
-                (_, 1, _) -> do
+                (_, _, 1, _) -> do
                     debug "target is non-empty"
                     return
-                      $ add_space (index +% 1) 1  -- drop 1 in `target`
-                      $ set_status (Turn P2)      -- alternate turn to P2
+                      $ add_space (index +% 1) 1    -- drop 1 in `target`
+                      $ set_status (Turn other)     -- alternate turn to P2
                             state
-                -- pass score1
-                (2, _, _) -> do
-                    debug "pass score1"
+                -- P1 pass score1
+                (P1, 2, _, _) -> do
+                    debug "P1 pass score1"
                     helper (index +% 1) (pieces - 2)
-                      $ add_space (index +% 1) 1  -- drop 1 in target-space
-                      $ add_score P1 1            -- P1 scores 1
+                      $ add_space (index +% 1) 1    -- drop 1 in `target`
+                      $ add_score P1 1              -- P1 scores 1
+                            state
+                -- P2 pass score2
+                (P2, 8, _, _) -> do
+                    debug "P2 pass score2"
+                    helper (index +% 1) (pieces - 2)
+                      $ add_space (index +% 1) 1    -- drop 1 in `target`
+                      $ add_score P2 1              -- P2 scores 1
                             state
                 -- normal
-                (_, _, _) -> do
+                (_, _, _, _) -> do
                     debug "normal"
                     helper (index +% 1) (pieces - 1)
-                      $ add_space (index +% 1) 1  -- drop 1 in target-space
+                      $ add_space (index +% 1) 1    -- drop 1 in `target`
                             state
         in helper action_index action_pieces
             $ set_space action_index 0 state
-    
-    -- (player 2) distribute selected pieces to the appropriate places
-    updated_action_p2 :: State -> IO State
-    updated_action_p2 state = let
-        action_index = get_active_index active_player action
-        action_pieces = get_space action_index state
-        emptied_action_index = set_space action_index 0 state
-        -- distribute action pieces
-        helper :: Int -> Int -> State -> IO State
-        helper index pieces state = let
-            target = get_space (index +% 1) state
-            after = get_space (index +% 2) state
-            in case (index, pieces, target) of
-                -- drop last piece in score2
-                (8, 1, _) -> do
-                    debug "drop last piece in score1"
-                    return
-                      $ add_score P2 1            -- P2 scores 1
-                      $ set_status (Turn P2)      -- P2 takes extra turn
-                            state
-                -- drop last piece immediately after score2
-                (8, 2, _) -> do
-                    debug "drop last piece immediately after score2"
-                    return
-                        $ add_score P2 1           -- P2 scores 1
-                        $ add_space (index +% 1) 1 -- drop 1 in `target`
-                        $ set_status (Turn P1)     -- alternate turn to P1
-                            state
-                -- `target` is empty
-                (_, 1, 0) -> do
-                    debug "target is empty"
-                    return
-                      $ add_space (index +% 1) 1  -- drop 1 in `target`
-                      $ add_score P2 after        -- P2 scores `after`
-                      $ set_space (index +% 2) 0  -- empty `after`
-                      $ set_status (Turn P1)      -- alternate turn to P1
-                            state
-                -- target is non-empty
-                (_, 1, _) -> do
-                    debug "target is non-empty"
-                    return
-                      $ add_space (index +% 1) 1  -- drop 1 in `target`
-                      $ set_status (Turn P1)      -- alternate turn to P1
-                            state
-                -- pass score2
-                (8, _, _) -> do
-                    debug "pass score2"
-                    helper (index +% 1) (pieces - 2)
-                      $ add_space (index +% 1) 1  -- drop 1 in target
-                      $ add_score P2 1            -- P2 scores 1
-                            state
-                -- normal
-                (_, _, _) -> do
-                    debug "normal"
-                    helper (index +% 1) (pieces - 1)
-                      $ add_space (index +% 1) 1  -- drop 1 in target
-                            state
-        in helper action_index action_pieces
-            $ set_space action_index 0 state
-    
+ 
     -- apply post-action rules
-    updated_postaction :: State -> IO State
-    updated_postaction state = return state
-    
-    -- update the status of the game,
-    -- including checking if the game is finished
-    updated_status :: State -> IO State
-    updated_status state = return state
-    
-    -- foldl
-    -- :: (State -> (State -> IO State) -> State)
-    -- -> State
-    -- -> [State -> IO State]
-    -- -> State
-
-    -- apply all updates, in left-right order (opposite of composition)
-    apply_updates :: IO State -> [State -> IO State] -> IO State
-    apply_updates = foldl (>>=)
+    update_cleanup :: State -> IO State
+    update_cleanup state = let
+        sum1 = sum $ take 6 $ map snd $ spaces state
+        sum2 = sum $ drop 6 $ map snd $ spaces state
+        in case (sum1, sum2) of
+            -- P1's side is empty
+            (0,_) -> return
+                $ add_score P1 sum2                 -- P1 scores P2's side
+                $ set_status Finished               -- game is finished
+                    state
+            -- P2's side is empty
+            (_,0) -> return
+                $ add_score P2 sum1                 -- P2 scores P1's side
+                $ set_status Finished               -- game is finished
+                    state
+            -- neither side is empty
+            (_,_) -> return state
     
     in case status state_orig of
         Finished -> return state_orig
-        Turn _   -> apply_updates (return state_orig)
-                        [ updated_action
-                        , updated_postaction
-                        , updated_status ]
+        Turn _  -> foldl (>>=) (return state_orig)
+                    [ update_action
+                    , update_cleanup ]
 
 \end{code}
 %\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
