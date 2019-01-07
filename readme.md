@@ -1,7 +1,5 @@
 # Mancala
 
-
-
 ## Interactive 2-Player Game
 
 ### Compile
